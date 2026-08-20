@@ -1,76 +1,59 @@
-import os
 import httpx
-from dotenv import load_dotenv
+from typing import Any, Dict, Optional
 
-load_dotenv()
-
+BASE_URL = "https://state-ledger-service-336798788711.us-central1.run.app"
 
 class LedgerClient:
-  """Handles all HTTP communication with the Java Backend REST API."""
+    def __init__(self, base_url: str = BASE_URL):
+        self.base_url = base_url
 
-  def __init__(self):
-    self.base_url = os.getenv(
-        "JAVA_BACKEND_URL", "http://localhost:8080/api/v1/ledger"
-    )
+    async def get_latest_state(self) -> Optional[Dict[str, Any]]:
+        """Fetches the latest state block from the immutable ledger."""
+        url = f"{self.base_url}/api/ledger/latest"
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.get(url, timeout=10.0)
+                if response.status_code == 200:
+                    return response.json()
+                print(f"[Ledger Status {response.status_code}] Latest state response: {response.text}")
+                return None
+            except Exception as e:
+                print(f"[Ledger Client Error] Failed to fetch latest state: {e}")
+                return None
 
-  async def get_latest_state(self) -> dict:
-    """Fetches the latest verified State Block from the Java Ledger."""
-    async with httpx.AsyncClient() as client:
-      try:
-        response = await client.get(f"{self.base_url}/latest", timeout=5.0)
-        response.raise_for_status()
+    async def commit_block(
+        self,
+        action_type: str,
+        parameters: Dict[str, Any],
+        status: str = "SUCCESS",
+        environment: str = "development",
+        session_id: str = "test_session_01"
+    ) -> Optional[Dict[str, Any]]:
+        """Commits a new action and execution state to the ledger via POST."""
+        url = f"{self.base_url}/api/ledger/commit"
+        
+        payload = {
+            "action_intent": {
+                "action_type": action_type.upper(),
+                "parameters": parameters
+            },
+            "system_context": {
+                "environment": environment,
+                "session_id": session_id
+            },
+            "execution_result": {
+                "status": status
+            }
+        }
 
-        # Check if response actually has content before parsing JSON
-        if not response.text.strip():
-          print(
-              "[LedgerClient Notice] Received empty response from backend."
-          )
-          return {}
-
-        return response.json()
-
-      except httpx.HTTPError as err:
-        print(f"[LedgerClient Notice] Could not connect to Java backend: {err}")
-        return {}
-      except ValueError as err:
-        print(
-            f"[LedgerClient Notice] Response was not valid JSON: {err}"
-        )
-        return {}
-
-  async def commit_state_block(
-      self, action_name: str, parameters: dict, observation: str
-  ) -> dict:
-    """Sends a proposed action + result to Java for validation & commit."""
-    payload = {
-        "action_name": action_name,
-        "parameters": parameters,
-        "observation": observation,
-    }
-
-    async with httpx.AsyncClient() as client:
-      try:
-        response = await client.post(
-            f"{self.base_url}/commit", json=payload, timeout=5.0
-        )
-
-        if response.status_code == 400:
-          print(
-              "[LedgerClient] Java Validator REJECTED block:"
-              f" {response.text}"
-          )
-          return {"status": "REJECTED", "details": response.text}
-
-        response.raise_for_status()
-
-        if not response.text.strip():
-          return {"status": "SUCCESS", "details": {}}
-
-        return {"status": "SUCCESS", "details": response.json()}
-
-      except httpx.HTTPError as err:
-        print(f"[LedgerClient Error] Failed to reach Java server: {err}")
-        return {"status": "ERROR", "details": str(err)}
-      except ValueError as err:
-        print(f"[LedgerClient Error] Invalid JSON from Java server: {err}")
-        return {"status": "ERROR", "details": str(err)}
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.post(url, json=payload, timeout=10.0)
+                if response.status_code in (200, 201):
+                    return response.json()
+                
+                print(f"\n[Backend Error {response.status_code}]: Detailed Response: {response.text}")
+                return None
+            except Exception as e:
+                print(f"[Ledger Client Error] Request failed: {e}")
+                return None
