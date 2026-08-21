@@ -3,11 +3,12 @@ package com.ledger.state_ledger.model;
 import jakarta.persistence.*;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
+import org.springframework.data.domain.Persistable;
 import java.time.OffsetDateTime;
 
 @Entity
 @Table(name = "ledger_blocks")
-public class StateBlock {
+public class StateBlock implements Persistable<Long> {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -17,38 +18,65 @@ public class StateBlock {
     @Column(name = "timestamp", insertable = false, updatable = false)
     private OffsetDateTime timestamp;
 
-    @Column(name = "previous_hash", nullable = false)
+    @Column(name = "previous_hash", nullable = false, updatable = false)
     private String previousHash;
 
-    @Column(name = "current_hash", nullable = false)
+    @Column(name = "current_hash", nullable = false, updatable = false)
     private String currentHash;
 
-    // Tell Hibernate to cast Java String to PostgreSQL JSONB
     @JdbcTypeCode(SqlTypes.JSON)
-    @Column(name = "action_intent", columnDefinition = "jsonb", nullable = false)
-    private String actionIntent;
+    @Column(name = "action_intent", columnDefinition = "jsonb", nullable = false, updatable = false)
+    private ActionIntent actionIntent;
 
     @JdbcTypeCode(SqlTypes.JSON)
-    @Column(name = "execution_result", columnDefinition = "jsonb")
-    private String executionResult;
+    @Column(name = "system_context", columnDefinition = "jsonb", updatable = false)
+    private SystemContext systemContext;
 
-    @Column(name = "status", nullable = false)
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "execution_result", columnDefinition = "jsonb", updatable = false)
+    private ExecutionResult executionResult;
+
+    @Column(name = "status", nullable = false, updatable = false)
     private String status = "COMMITTED";
+
+    @Transient
+    private boolean isNew = true;
 
     public StateBlock() {}
 
-    public StateBlock(String previousHash, String currentHash, String actionIntent, String executionResult) {
+    // Constructor updated to accept ExecutionResult object
+    public StateBlock(String previousHash, String currentHash, ActionIntent actionIntent, SystemContext systemContext, ExecutionResult executionResult) {
         this.previousHash = previousHash;
         this.currentHash = currentHash;
         this.actionIntent = actionIntent;
+        this.systemContext = systemContext;
         this.executionResult = executionResult;
+        this.isNew = true;
     }
 
-    // Getters and Setters
+    @Override
+    public Long getId() {
+        return blockId;
+    }
+
+    @Override
+    public boolean isNew() {
+        return isNew;
+    }
+
+    @PostPersist
+    @PostLoad
+    public void markNotNew() {
+        this.isNew = false;
+    }
+
+    // Getters
     public Long getBlockId() { return blockId; }
+    public OffsetDateTime getTimestamp() { return timestamp; }
     public String getPreviousHash() { return previousHash; }
     public String getCurrentHash() { return currentHash; }
-    public String getActionIntent() { return actionIntent; }
-    public String getExecutionResult() { return executionResult; }
+    public ActionIntent getActionIntent() { return actionIntent; }
+    public SystemContext getSystemContext() { return systemContext; }
+    public ExecutionResult getExecutionResult() { return executionResult; }
     public String getStatus() { return status; }
 }
